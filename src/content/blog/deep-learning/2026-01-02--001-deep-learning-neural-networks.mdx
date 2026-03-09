@@ -1,0 +1,171 @@
+---
+title: "Kullback–Leibler Divergence: Đo lường sự khác biệt phân phối"
+description: "Tìm hiểu về KL Divergence, từ ý tưởng lý thuyết thông tin đến ứng dụng cực tiểu hóa trong Machine Learning và Deep Learning."
+pubDate: 2026-01-02
+author: "AI Blog"
+category: "Machine Learning Theory"
+tags: ["statistics", "information-theory", "kl-divergence", "machine-learning"]
+image: ""
+---
+
+
+
+## 1. Nguồn gốc của KL Divergence
+**Kullback-Leibler Divergence (gọi tắt là KL Divergence hay Phân kỳ KL)** là một trong những khái niệm nền tảng và quan trọng nhất trong Lý thuyết Thông tin (Information Theory), Xác suất Thống kê và Học máy (Machine Learning). Được giới thiệu vào năm **1951** bởi hai nhà toán học và mật mã học người Mỹ: **Solomon Kullback** và **Richard Leibler**. 
+Ban đầu, họ gọi nó là "Directed divergence" (Phân kỳ có hướng) giữa hai phân phối xác suất. Khái niệm này được phát triển như một phần mở rộng của Lý thuyết Thông tin do Claude Shannon đề xuất vào năm 1948.
+
+---
+
+## 2. Ý tưởng cốt lõi (Intuition)
+Hãy tưởng tượng bạn có một tập dữ liệu thực tế được sinh ra từ một phân phối xác suất $P$ (True Distribution). Tuy nhiên, bạn không biết rõ $P$, nên bạn dùng một mô hình học máy để tạo ra một phân phối $Q$ nhằm xấp xỉ $P$.
+
+*   **Câu hỏi đặt ra là:** Nếu bạn dùng $Q$ để mô tả $P$, bạn sẽ bị "sai lệch" bao nhiêu? Hay nói cách khác, bạn bị "mất đi bao nhiêu lượng thông tin"?
+*   **Trả lời:** KL Divergence, ký hiệu là $D_{KL}(P || Q)$, chính là **lượng thông tin bị mất đi** khi bạn dùng phân phối $Q$ để xấp xỉ phân phối thực $P$.
+
+---
+
+## 3. Công thức này sinh từ đâu ra?
+Để hiểu công thức của KL Divergence, ta phải bắt nguồn từ **Lý thuyết thông tin của Shannon**, thông qua 3 bước: Lượng thông tin $\rightarrow$ Entropy $\rightarrow$ Cross-Entropy.
+
+### 3.1. Lượng thông tin của một sự kiện (Information Content / Surprise)
+Nếu một sự kiện $x$ có xác suất xảy ra là $p(x)$, thì lượng thông tin thu được (hay độ ngạc nhiên) khi sự kiện đó xảy ra được tính bằng:
+$$I(x) = -\log p(x)$$
+*(Sự kiện càng hiếm - xác suất càng thấp, thì lượng thông tin/độ ngạc nhiên càng cao).*
+
+Để hiểu tại sao công thức $I(x) = -\log p(x)$ lại phản ánh đúng "độ ngạc nhiên", chúng ta hãy xem xét ví dụ về thời tiết.
+
+Giả sử chúng ta dùng **Logarit cơ số 2** (đơn vị là **bits**).
+
+#### Ví dụ: Dự báo thời tiết tại một sa mạc
+
+Hãy tưởng tượng bạn đang ở giữa một sa mạc khô hạn nhất thế giới. Chúng ta có hai sự kiện:
+
+*  **Sự kiện A:** "Ngày mai trời nắng".
+    *   Xác suất xảy ra: $p(A) = 0.99$ (99% là nắng).
+    *   Lượng thông tin: $I(A) = -\log_2(0.99) \approx 0.014$ bits.
+*  **Sự kiện B:** "Ngày mai trời mưa".
+    *   Xác suất xảy ra: $p(B) = 0.01$ (1% là mưa).
+    *   Lượng thông tin: $I(B) = -\log_2(0.01) \approx 6.64$ bits.
+
+*   **Với sự kiện A (Trời nắng):** Vì bạn đang ở sa mạc, việc ngày mai trời nắng là điều **ai cũng biết trước**. Khi nghe tin "Ngày mai nắng", bạn không hề ngạc nhiên, bạn cũng không học thêm được điều gì mới mẻ. Lượng thông tin thu được rất thấp ($\approx 0$).
+*   **Với sự kiện B (Trời mưa):** Việc sa mạc có mưa là một sự kiện **cực kỳ hiếm**. Nếu bạn nghe tin "Ngày mai trời mưa", bạn sẽ thấy vô cùng ngạc nhiên và đó là một thông tin "giá trị" vì nó phá vỡ trạng thái bình thường. Lượng thông tin thu được cao ($\approx 6.64$).
+
+#### Tại sao lại là hàm $-\log(p)$
+
+Có 3 lý do tại sao các nhà toán học chọn hàm này để đo thông tin:
+
+1.  **Tính nghịch đảo:** Vì $p$ nằm trong khoảng $(0, 1]$, nên khi $p$ càng nhỏ (sự kiện càng hiếm), $-\log(p)$ càng lớn. Điều này khớp với trực giác: Sự kiện hiếm = Nhiều thông tin.
+2.  **Tính cộng dồn (Additivity):** Đây là tính chất quan trọng nhất. Nếu bạn có hai sự kiện **độc lập** $x$ và $y$, lượng thông tin khi cả hai cùng xảy ra phải bằng tổng lượng thông tin của từng sự kiện cộng lại:
+    $$I(x, y) = I(x) + I(y)$$
+    Trong khi xác suất của hai sự kiện độc lập là nhân: 
+    $$
+    p(x, y) = p(x) \times p(y)
+    $$
+    Hàm **Logarit** là hàm duy nhất biến phép nhân thành phép cộng:
+    $$
+    -\log(p(x) \times p(y)) = -\log(p(x)) + (-\log(p(y)))
+    $$
+    Nhờ có log, chúng ta mới có thể tính toán thông tin theo kiểu cộng dồn dễ dàng.
+3.  **Điểm neo:** Nếu một sự kiện chắc chắn xảy ra ($p=1$), thì $I(1) = -\log(1) = 0$. Một sự kiện chắc chắn xảy ra thì không mang lại chút thông tin mới nào cả (vì ta đã biết trước kết quả).
+
+
+### 3.2. Shannon Entropy (Bình thường hóa)
+
+**Entropy $H(P)$** là giá trị trung bình (kỳ vọng) của lượng thông tin của tất cả các sự kiện trong phân phối $P$. Nó cũng chính là số bit trung bình tối thiểu để mã hóa dữ liệu sinh ra từ $P$:
+$$
+H(P) = \mathbb{E}_{x \sim P}[-\log P(x)] = -\sum_x P(x) \log P(x)
+$$
+
+### 3.3. Cross-Entropy
+Giả sử dữ liệu thực tế tuân theo $P$, nhưng bạn lại tin rằng nó tuân theo $Q$. Bạn xây dựng một bộ mã hóa dựa trên $Q$. Vậy số bit trung bình bạn phải dùng (nhưng dữ liệu vẫn được rút ra từ $P$) là bao nhiêu? Đó là **Cross-Entropy $H(P, Q)$**:
+$$
+H(P, Q) = \mathbb{E}_{x \sim P}[-\log Q(x)] = -\sum_x P(x) \log Q(x)
+$$
+
+### 3.4. Công thức KL Divergence
+KL Divergence chính là **sự chênh lệch (độ lãng phí)** giữa việc dùng phân phối $Q$ (sai) so với dùng chính xác phân phối $P$ (đúng) để mã hóa dữ liệu từ $P$.
+$$
+D_{KL}(P || Q) = H(P, Q) - H(P)
+$$
+
+Thay công thức vào, ta có:
+$$
+D_{KL}(P || Q) = \left(-\sum_x P(x) \log Q(x)\right) - \left(-\sum_x P(x) \log P(x)\right)
+$$
+$$
+D_{KL}(P || Q) = \sum_x P(x) \log P(x) - \sum_x P(x) \log Q(x)
+$$
+Sử dụng tính chất của logarit ($\log a - \log b = \log \frac{a}{b}$), ta ra được **Công thức cuối cùng**:
+
+$$
+D_{KL}(P || Q) = \sum_x P(x) \log \frac{P(x)}{Q(x)}
+$$
+
+
+***Trường hợp rời rạc (Discrete):***
+$$
+D_{KL}(P || Q) = \sum_{x \in \mathcal{X}} P(x) \log \frac{P(x)}{Q(x)}
+$$
+
+***Trường hợp liên tục (Continuous):***
+$$
+D_{KL}(P || Q) = \int_{-\infty}^{\infty} P(x) \log \frac{P(x)}{Q(x)} dx
+$$
+
+Có thể viết lại công thức dưới dạng kỳ vọng toán học:
+$$
+D_{KL}(P || Q) = \mathbb{E}_{x \sim P} \left[ \log \frac{P(x)}{Q(x)} \right]
+$$
+*   Nó lấy tỷ lệ $\frac{P(x)}{Q(x)}$. Nếu $P(x)$ lớn mà $Q(x)$ nhỏ, tỷ lệ này cực lớn, log của nó sẽ lớn $\rightarrow$ KL Divergence bị "phạt" (penalty) rất nặng. Nghĩa là: *Nếu dữ liệu thực tế xuất hiện nhiều, mà mô hình dự đoán xác suất xuất hiện thấp, thì mô hình của bạn rất tồi.*
+*   Mọi giá trị này đều được nhân với $P(x)$ (lấy trung bình theo $P$). Tại sao không nhân với $Q$? Vì thế giới thực hoạt động theo $P$, ta phải đánh giá sự sai lệch dựa trên tần suất xuất hiện trong thế giới thực ($P$).
+
+---
+
+## 4. Các tính chất của KL Divergence
+
+
+### 4.1. Tính chất 1: Luôn không âm
+
+Bất đẳng thức Jensen phát biểu rằng với một hàm lồi (convex) $f$, thì 
+$$
+\mathbb{E}[f(X)] \ge f(\mathbb{E}[X])
+$$
+Do hàm $-\log(z)$ là hàm lồi, ta có:
+
+$$
+D_{KL}(P || Q) = \mathbb{E}_{x \sim P} \left[ -\log \frac{Q(x)}{P(x)} \right]
+$$
+
+Áp dụng BĐT Jensen:
+
+$$
+\mathbb{E}_{x \sim P} \left[ -\log \frac{Q(x)}{P(x)} \right] \ge -\log \left( \mathbb{E}_{x \sim P} \left[ \frac{Q(x)}{P(x)} \right] \right)
+$$
+Ta khai triển vế trong logarit:
+$$
+\mathbb{E}_{x \sim P} \left[ \frac{Q(x)}{P(x)} \right] = \sum_x P(x) \frac{Q(x)}{P(x)} = \sum_x Q(x) = 1
+$$
+Vì $Q(x)$ là một phân phối xác suất nên tổng của nó bằng 1. Thay trở lại, ta có:
+$$
+D_{KL}(P || Q) \ge -\log(1) = 0
+$$
+Vậy $D_{KL}(P || Q) \ge 0$.
+
+### 4.2. Tính chất 2: Cực tiểu bằng 0
+Giá trị cực tiểu của KL Divergence chính là 0. Dấu "$=$" xảy ra khi và chỉ khi $\frac{Q(x)}{P(x)} = 1$ với mọi $x$, tức là **$P(x) = Q(x)$**.
+
+**Ý nghĩa trong Học máy:** 
+* Vì cực tiểu là 0 khi hai phân phối trùng nhau, nên trong AI/Machine Learning, người ta coi $D_{KL}(P || Q)$ là hàm mất mát (Loss function). 
+* Mục tiêu của huấn luyện mô hình như VAE hoặc các mô hình sinh (Generative models) là tối ưu hóa trọng số sao cho **Cực tiểu hóa KL Divergence**. Khi KL Divergence tiến về 0, mô hình $Q$ của bạn đã học được chính xác cách phân bố của dữ liệu thực $P$.
+
+### 4.3. Tính chất 3: Sự bất đối xứng (Asymmetry)
+Lưu ý quan trọng: KL Divergence **không phải là một khoảng cách (distance metric)** trong không gian hình học, vì:
+$$D_{KL}(P || Q) \neq D_{KL}(Q || P)$$
+*   $D_{KL}(P || Q)$ (Forward KL): Bắt $Q$ phải bao phủ tất cả những chỗ $P$ có mặt. Thường dùng trong Supervised Learning (Cross-Entropy Loss).
+*   $D_{KL}(Q || P)$ (Reverse KL): Thường khiến $Q$ hội tụ vào một đỉnh (mode-seeking) của $P$. Thường dùng trong Variational Inference / VAE.
+
+## 5. Tổng kết
+*   **Nguồn gốc** Từ việc lấy hiệu số giữa Cross-Entropy (số bit dùng mô hình) và Entropy (số bit lý tưởng thực tế).
+*   **Ý nghĩa:** Đo độ lệch, độ "lãng phí" thông tin khi dùng phân phối xấp xỉ thay vì phân phối thực.
+*   **Toán học:** Là kỳ vọng của logarit tỷ lệ hai hàm mật độ xác suất.
+*   **Cực tiểu:** Bằng $0$ khi hai phân phối trùng khớp hoàn toàn, do đó được dùng làm hàm mục tiêu tối ưu (Loss function) phổ biến nhất nhì trong AI.
