@@ -39,7 +39,7 @@ Khi đó, điểm dữ liệu $z \in \mathbb{R}^{T \times H \times W \times 3}$.
 
 ## 3. Đánh giá việc lấy mẫu thành công
 
-![Nhận định cảm tính của con người với các kết quả tạo sinh](src/content/images/diffusion/0001.png)
+![Nhận định cảm tính của con người với các kết quả tạo sinh](assets/blog_images/diffusion/2026-02-09--001-introduction-to-flow-and-diffusion-models-001.png)
 
 
 ### 3.1. Nhận định cảm tính của con người
@@ -97,7 +97,7 @@ Mục tiêu của chúng ta là tạo ra cái mới, nói cách khác lấy mẫ
 ### 4.1. Dữ liệu huấn luyện
 
 
-![Quá trình tạo sinh hình ảnh](src/content/images/diffusion/0002.png)
+![Quá trình tạo sinh hình ảnh](assets/blog_images/diffusion/2026-02-09--001-introduction-to-flow-and-diffusion-models-002.png)
 
 Vì chúng ta không biết công thức của $p_{\text{data}}$, làm sao để huấn luyện AI? Câu trả lời nằm ở **Tập dữ liệu (Dataset)**.
 
@@ -297,7 +297,7 @@ $$
 ### 5.4. Sự hội tụ - đi về đúng đích
 
 <img
-  src="/src/content/images/diffusion/0003.png"
+  src="/assets/blog_images/diffusion/2026-02-09--001-introduction-to-flow-and-diffusion-models-003.png"
   alt="Các điểm dữ liệu di chuyển về phía tọa độ gốc theo thời gian t"
   style={{
     width: "50%",
@@ -314,3 +314,9 @@ Nhìn vào đồ thị trên, mỗi đường màu là một lộ trình xuất 
 
 Trong các mô hình thực tế như **Flow Matching**, mạng nơ-ron của chúng ta không học hàm đơn giản $-\theta x$ này. Nó học một trường vector $u_t(x)$ cực kỳ phức tạp để thay vì kéo mọi thứ về số 0, nó sẽ kéo các khối nhiễu về phía *vùng dữ liệu thật* (nơi chứa ảnh chó, mèo, v.v.). 
 Nguyên lý di chuyển theo dòng chảy (Flow) vẫn y hệt như ví dụ trên: **Mượt mà, xác định và luôn đi tới đích.**
+
+## Tài liệu tham khảo
+
+[1] [High-Resolution Image Synthesis with Latent Diffusion Models](https://arxiv.org/abs/2112.10752)
+
+[2] [Introduction to Flow Matching and Diffusion Models](https://diffusion.csail.mit.edu/2026/index.html)

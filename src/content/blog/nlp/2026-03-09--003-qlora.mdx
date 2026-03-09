@@ -1,0 +1,204 @@
+---
+title: "QLORA: Efficient Finetuning of Quantized LLM"
+description: ""
+pubDate: 2026-03-09
+author: "hopny"
+category: "LLM"
+tags: ["efficient-tuning","quantize","lora", "llm", "nlp"]
+image: ""
+---
+
+## 1. Tổng quan về hướng tiếp cận
+
+Tinh chỉnh mô các mô hình dựa trên kiến trúc Transformer có các hướng tiếp cận khác nhau đòi hỏi tài nguyên phần cứng khác nhau. Trong nghiên cứu của QLora, tác giả chỉ ra 3 hướng tiếp cận chính
+<figure style={{ textAlign: "center" }}>
+  <img
+    src="/assets/blog_images/nlp/2026-03-09--003-qlora-001.png"
+    style={{
+      width: "70%",
+      maxWidth: "400px",
+      display: "block",
+      margin: "0 auto"
+    }}
+  />
+  <figcaption>
+    Hình 1. Các phương pháp tinh chỉnh mô hình: Full Fine-tuning, LoRA và QLoRA [2]
+  </figcaption>
+</figure>
+
+### 1.1. Full Finetuning (Tinh chỉnh toàn bộ)
+*   **Cơ chế:** Bạn cập nhật tất cả các tham số của mô hình cơ sở (base model).
+*   **Đặc điểm:**
+    *   Sử dụng mô hình 16-bit (ví dụ: FP16 hoặc BF16).
+    *   Tốn rất nhiều tài nguyên bộ nhớ vì phải lưu trữ trạng thái bộ tối ưu hóa (optimizer states - 32-bit) và cập nhật toàn bộ tham số của mô hình 16-bit.
+    *   Đây là cách tốn kém nhất, đòi hỏi phần cứng GPU rất mạnh.
+
+### 1.2. LoRA (Low-Rank Adaptation)
+*   **Cơ chế:** Thay vì cập nhật toàn bộ mô hình, LoRA chỉ chèn thêm các ma trận nhỏ (adapters) vào mô hình cơ sở. Chỉ các "adapters" này được huấn luyện, còn mô hình cơ sở được đóng băng (không thay đổi).
+*   **Đặc điểm:**
+    *   Sử dụng mô hình cơ sở 16-bit.
+    *   Giảm đáng kể số lượng tham số cần huấn luyện.
+    *   Tiết kiệm bộ nhớ hơn so với Full Finetuning vì chỉ cần lưu trữ và tính toán gradient cho các adapters nhỏ.
+
+### 1.3. QLoRA (Quantized LoRA)
+*   **Cơ chế:** Đây là phiên bản nâng cấp và hiệu quả hơn của LoRA, được thiết kế để tiết kiệm bộ nhớ tối đa.
+*   **Các đặc điểm chính (như hình minh họa):**
+    *   **4-bit Transformer:** Mô hình cơ sở được nén (quantized) xuống 4-bit thay vì 16-bit. Điều này làm giảm đáng kể kích thước mô hình lưu trong VRAM.
+    *   **Paged Optimizers:** Để tránh các "spike" (đỉnh) bộ nhớ đột ngột trong quá trình huấn luyện, QLoRA sử dụng cơ chế quản lý bộ nhớ thông minh (thể hiện qua "Paging Flow" màu hồng). Các phần của optimizer state tạm thời không dùng đến có thể được chuyển sang **CPU (bộ nhớ hệ thống)** để giải phóng GPU VRAM, tránh lỗi tràn bộ nhớ (Out of Memory).
+
+---
+
+## 2. Các yếu tố chiếm dụng bộ nhớ VRAM
+
+
+### 2.1. Phân tích thực nghiệm
+Nhiều người nghĩ rằng vì LoRA chỉ huấn luyện một tỷ lệ nhỏ tham số (chỉ khoảng 0.2% trọng số gốc), nên việc huấn luyện sẽ tiêu tốn cực kỳ ít bộ nhớ. Tuy nhiên thực nghiệm chỉ ra rằng 
+**phần lớn bộ nhớ không nằm ở các tham số LoRA, mà nằm ở "Activation Gradients" (các gradient của quá trình kích hoạt)** trong quá trình lan truyền ngược (backpropagation).
+
+#### Phân tích cụ thể với mô hình 7B (LLaMA)
+Tác giả đưa ra một ví dụ thực tế với mô hình 7 tỷ tham số (7B) để làm rõ vấn đề:
+*   **Trọng số LoRA (LoRA weights):** Chỉ tốn **26 MB**. Đây là con số rất nhỏ.
+*   **Gradient của đầu vào (Input gradients):** Tốn tới **567 MB**.
+*   **Mô hình cơ sở 4-bit (Base model):** Tốn **5,048 MB** (đây là bộ nhớ để lưu trữ các trọng số của mô hình gốc đã được nén 4-bit).
+
+**Kết luận từ con số:** Gradient của quá trình tính toán (activation gradients) chiếm tài nguyên lớn hơn nhiều so với việc lưu trữ các ma trận LoRA mới thêm vào.
+
+### 2.2. Kỹ thuật Gradient Checkpointing
+Bằng việc áp dụng **Gradient Checkpointing** (một kỹ thuật lưu trữ các "điểm kiểm tra" trong quá trình lan truyền xuôi để không phải lưu trữ tất cả các activation ở mọi layer, từ đó giúp tiết kiệm bộ nhớ khi tính toán gradient).
+*   **Kết quả:** Sau khi áp dụng Gradient Checkpointing, gradient của đầu vào giảm từ 567 MB xuống còn trung bình **18 MB**.
+*   **Ý nghĩa:** Lúc này, phần chiếm dụng bộ nhớ do "activation" (18 MB) đã trở nên tương đương hoặc thậm chí ít hơn so với phần "LoRA weights" (26 MB).
+
+### 2.3. Hướng tiếp cận trong việc tối ưu tài nguyên
+Dựa vào thông tin điều tra trên, có 2 kết luận quan trọng để tối ưu tài nguyên:
+
+1.  **Đừng quá khắt khe trong việc giảm bớt LoRA:** Vì LoRA weights vốn dĩ đã chiếm một phần rất nhỏ trong tổng bộ nhớ huấn luyện, nên việc cố gắng tối ưu hóa (giảm bớt) số lượng tham số trong LoRA sẽ **không mang lại lợi ích đáng kể** về mặt tiết kiệm VRAM.
+2.  **Cơ hội để tăng hiệu năng:** Vì chi phí bộ nhớ cho LoRA là thấp, chúng ta hoàn toàn có thể **sử dụng nhiều bộ adapter (multi-adapter) cùng lúc** hoặc tăng kích thước rank của LoRA để cải thiện chất lượng mô hình mà không sợ làm "tràn" bộ nhớ GPU quá mức. Điều này giúp cân bằng giữa hiệu suất (performance) và tài nguyên phần cứng (compute resource).
+
+
+---
+
+## 3. Quantization là gì
+
+### 3.1. Lượng tử hóa là gì?
+
+Trong các mô hình AI (như GPT, Llama), các trọng số (weights) của mạng thần kinh ban đầu thường được lưu dưới dạng **FP32** (số thực 32-bit). 
+**Lượng tử hóa** là quá trình chuyển đổi các giá trị này sang một định dạng có ít bit hơn, ví dụ như **Int8** (8 bit) hoặc **Int4** (4 bit):
+*   **FP32 (32 bit):** Cho phép biểu diễn các số rất nhỏ và rất lớn với độ chính xác cao.
+*   **Int8/Int4:** Giới hạn phạm vi biểu diễn, chỉ lưu các số nguyên trong một dải nhất định (ví dụ từ -128 đến 127 đối với Int8).
+
+
+
+### 3.2. Toán học cơ bản
+Để chuyển từ số thực (FP32) sang số nguyên (Int8, phạm vi từ -127 đến 127), ta cần "co" dữ liệu lại sao cho vừa với phạm vi đó. Công thức như sau:
+$$
+X^{Int8} = \text{round}\left(\frac{127}{\text{absmax}(X^{FP32})} \times X^{FP32}\right)
+$$
+
+*   **$absmax(X^{FP32})$:** Là giá trị tuyệt đối lớn nhất trong tập dữ liệu của bạn.
+*   **$c = \frac{127}{absmax}$:** Đây được gọi là **hệ số lượng tử hóa (quantization constant)**.
+*   **$\text{round}$:** Làm tròn đến số nguyên gần nhất.
+
+**Ví dụ:** Bạn có dãy số `[0.1, 0.5, 10.0]`.
+*   $absmax = 10.0$.
+*   Hệ số $c = 127 / 10 = 12.7$.
+*   Số `0.1` biến thành: $\text{round}(0.1 \times 12.7) = \text{round}(1.27) = 1$.
+*   Số `0.5` biến thành: $\text{round}(0.5 \times 12.7) = \text{round}(6.35) = 6$.
+*   Số `10.0` biến thành: $\text{round}(10.0 \times 12.7) = \text{round}(127) = 127$.
+
+Kết quả: `[1, 6, 127]`. Bạn đã nén thành công!
+
+
+### 3.3 Vấn đề "Outlier" (Giá trị bất thường)"
+**Vấn đề:** Nhìn vào ví dụ trên, số `0.1` và `0.5` bị "nén" rất mạnh vì phải tuân theo cái chuẩn quá lớn là `10.0`. Nếu `10.0` chỉ là một giá trị nhiễu (outlier), thì các giá trị nhỏ `0.1, 0.5` sẽ mất đi độ chính xác khi chuyển thành `1, 6`.
+Điều này sẽ ảnh đến độ chính xác của mô hình sau khi quantize.
+
+
+### 3.4. Tại sao chúng ta lại cần Lượng tử hóa?
+Đây là lý do tại sao nó là "chìa khóa" giúp các mô hình AI lớn có thể chạy trên máy tính cá nhân:
+
+1.  **Tiết kiệm bộ nhớ (VRAM):** Một mô hình có 7 tỷ tham số nếu dùng FP32 sẽ cần khoảng 28GB VRAM (vượt quá khả năng của hầu hết card đồ họa cá nhân). Nếu dùng lượng tử hóa 4-bit, nó chỉ còn tốn khoảng 4-5GB VRAM. **Bạn có thể chạy mô hình khổng lồ trên card màn hình phổ thông.**
+2.  **Tăng tốc độ tính toán:** Các phép tính trên số nguyên (Integer) thường nhanh hơn nhiều so với phép tính trên số thực (Floating point) trên phần cứng GPU hiện nay.
+3.  **Tiết kiệm năng lượng:** Việc di chuyển ít dữ liệu hơn (từ bộ nhớ vào chip xử lý) giúp tiết kiệm điện năng đáng kể, đặc biệt quan trọng trên điện thoại di động (AI trên Edge devices).
+
+### 3.5. Sự đánh đổi
+Lượng tử hóa không phải là "phép màu" hoàn hảo. Nó đi kèm với một sự đánh đổi **Mất mát thông tin.** 
+Vì bạn đang ép một dải số rộng (thực tế) vào một cái khuôn hẹp hơn (số nguyên), bạn sẽ bị mất đi những chi tiết nhỏ.
+*   Nếu lượng tử hóa quá mạnh (ví dụ nén quá mức), mô hình AI có thể bị "ngu" đi, trả lời sai, hoặc đưa ra kết quả không còn chính xác như bản gốc.
+*   Các kỹ thuật như *Block-wise Quantization* hay *Fine-tuning* sau khi lượng tử hóa giúp bù đắp sự mất mát này, để mô hình vẫn thông minh trong khi kích thước đã nhỏ gọn hơn nhiều.
+
+
+## 4. Hướng tiếp cận của QLoRA (Quantized Low-Rank Adaptation)
+
+QLoRA (Quantized Low-Rank Adaptation) là một bước đột phá quan trọng giúp tinh chỉnh (finetune) các mô hình ngôn ngữ lớn (LLM) lên tới 65 tỷ tham số trên một GPU đơn lẻ. Dưới đây là giải thích chi tiết về các thành phần trong QLoRA
+
+### 3.1. 4-bit NormalFloat (NF4) Quantization
+Bước đầu tiên là tiến hành quantization mô hình cần finetuning, tuy nhiên vấn đề cốt lõi của quantization thường có sai số lớn khi áp dụng cho các trọng số (weights).
+
+**Trạng thái của trọng số trong mô hình:** Các trọng số của mô hình đã tiền huấn luyện thường có phân phối chuẩn với trung bình bằng 0 và độ lệch chuẩn $\sigma$ xác định.
+Điều này dẫn đến quantization tuyến tính (thường gây sai số lớn ở vùng giá trị biên)
+
+**Vấn đề của Quantization thông thường (Linear Quantization):** Hãy tưởng tượng chúng ta có một chiếc hộp chứa 16 ngăn (vì 4-bit = $2^4$ = 16 giá trị) để xếp các trọng số (weights) của mô hình.
+Giả sử trọng số của bạn nằm trong khoảng từ -1 đến 1 và bạn chia 16 ngăn **đều nhau** (ví dụ: -1 đến -0.875, -0.875 đến -0.75, v.v.).
+
+*   **Vấn đề:** Các trọng số của mô hình **không phân bố đều**. Chúng tập trung dày đặc xung quanh số 0 (đỉnh của hình chuông phân phối chuẩn) và thưa thớt ở các giá trị lớn (biên của hình chuông).
+*   **Kết quả:**
+    *   Lãng phí nhiều ngăn ở các cạnh (nơi không có trọng số nào).
+    *   Đồng thời "nhồi nhét" quá nhiều trọng số quan trọng ở giữa vào chỉ 1 hoặc 2 ngăn, gây ra sai số làm tròn (rounding error) rất lớn.
+
+**Giải pháp 4-bit NormalFloat (NF4):** Áp dụng nguyên lý "Khoảng cách tùy biến", NF4 không chia 16 ngăn đều nhau. Nó chia sao cho **mỗi ngăn chứa một số lượng trọng số gần như bằng nhau**.
+
+*  **Cơ chế:** Vì phân phối chuẩn có mật độ cao ở giữa, NF4 sẽ đặt số lượng các ngăn "dày" hơn ở giữa (để giữ độ chính xác cao cho các số gần 0) và các ngăn "thưa" hơn ở ngoài rìa (nơi các trọng số hiếm xuất hiện).
+
+
+#### Cần "Asymmetry" quantization (Lượng tử hóa bất đối xứng)?
+Trong toán học, phân phối chuẩn có số 0 nằm chính giữa. Nếu ta chỉ dùng quantization đối xứng (ví dụ chia từ -1 đến 1 và lấy số 0 là điểm chính giữa của một ngăn), thì số 0 thực sự rất khó để biểu diễn chính xác (nghĩa là các giá trị gần 0 cũng bị lượng tử hóa thành 0)
+
+**Cách xử lý của NF4:** QLoRA thực hiện "tách đôi" phân phối. Nó chia lượng quantile cho phần âm và phần dương, sau đó "ghép" chúng lại và buộc một mã (code) đại diện cho số 0 phải tồn tại độc lập. Điều này đảm bảo khi mô hình gặp số 0, nó sẽ lưu chính xác là 0, không bị biến thành 0.00001 (lỗi quantization).
+
+$$
+q_i = \frac{1}{2} \left( Q_x\left(\frac{i}{2^k+1}\right) + Q_x\left(\frac{i+1}{2^k+1}\right) \right)
+$$
+
+*   $Q_x$ là hàm ngược của phân phối chuẩn (probit function).
+*   Công thức này lấy trung bình điểm của hai phân vị (quantile) liên tiếp để tạo ra một "điểm đại diện" (centroid) cho ngăn đó.
+*   Bằng cách này, QLoRA đảm bảo mỗi ngăn đại diện cho một phần xác suất bằng nhau của phân phối chuẩn, giúp giảm sai số quantization xuống mức thấp nhất có thể với chỉ 4-bit.
+
+
+### 3.2. Double Quantization (DQ)
+Khi thực hiện quantization, chúng ta cần lưu trữ các "hằng số quantization" (quantization constants). Nếu block size nhỏ (để tăng độ chính xác), số lượng hằng số này sẽ rất lớn, gây tốn bộ nhớ.
+
+*   **Bài toán:** Với block size = 64, mỗi tham số sẽ gánh thêm $32/64 = 0.5$ bits (cho hằng số 32-bit).
+*   **Giải pháp:** QLoRA thực hiện "quantization cho các hằng số".
+    *   Các hằng số $c_2^{FP32}$ ban đầu tiếp tục được quantization lần thứ hai thành $c_2^{FP8}$.
+*   **Hiệu quả:**
+    *   Bộ nhớ cho hằng số giảm từ $0.5$ bits/tham số xuống còn khoảng $0.127$ bits/tham số (tính toán dựa trên công thức $8/64$). Điều này tiết kiệm đáng kể VRAM mà không làm giảm đáng kể hiệu năng.
+
+
+### 3.3. Paged Optimizers
+Đây là kỹ thuật giúp tránh lỗi "Out-of-Memory" (OOM) khi mô hình quá lớn.
+
+*   **Cơ chế:** Dựa trên tính năng **NVIDIA Unified Memory**. Hệ thống tự động quản lý việc di chuyển dữ liệu giữa GPU VRAM và CPU RAM.
+*   **Ứng dụng:** Khi VRAM của GPU đầy, các trạng thái của bộ tối ưu hóa (optimizer states - thường chiếm nhiều bộ nhớ nhất) sẽ được đẩy (paged out) sang RAM hệ thống. Khi cần cập nhật trọng số, chúng được kéo ngược lại (paged in) vào GPU. Điều này giúp quá trình huấn luyện diễn ra liên tục, không bị gián đoạn dù mô hình vượt quá dung lượng GPU.
+
+### 3.4. Phương trình tổng quát của QLoRA
+Phương trình cốt lõi để tính toán forward pass cho một lớp linear trong QLoRA:
+
+$$
+Y^{BF16} = X^{BF16} \cdot \text{doubleDequant}(c_1^{FP32}, c_2^{k-bit}, W^{NF4}) + X^{BF16} L_1^{BF16} L_2^{BF16}
+$$
+
+**Giải thích các thành phần:**
+1.  **$W^{NF4}$ (Frozen Base Weights):** Đây là các trọng số gốc của mô hình đã được nén về 4-bit (NF4). Chúng được giữ nguyên, không thay đổi (frozen).
+2.  **$\text{doubleDequant}(\cdot)$:** Trước khi nhân ma trận, $W^{NF4}$ được giải nén (dequantize) ngược lại về dạng BF16 (16-bit) theo thời gian thực (on-the-fly) sử dụng các hằng số $c_1, c_2$.
+3.  **$L_1, L_2$ (Trainable LoRA Adapters):** Đây là hai ma trận rank thấp (Low-Rank). Chúng được huấn luyện ở định dạng 16-bit (BF16).
+4.  **$X^{BF16}$:** Dữ liệu đầu vào (input) ở định dạng 16-bit.
+
+**Tóm lại:** QLoRA giữ phần lớn mô hình ở dạng 4-bit để tiết kiệm bộ nhớ, nhưng khi tính toán (forward/backward pass), nó giải nén tạm thời sang 16-bit để thực hiện phép nhân ma trận. Chỉ có các tham số LoRA (nhỏ hơn rất nhiều) là được cập nhật (gradient update), giúp quá trình finetuning cực kỳ nhẹ nhàng nhưng vẫn giữ được độ chính xác của mô hình lớn.
+
+## Tài liệu tham khảo
+
+[1] [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)
+
+[2] [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314)
+
+[3] [Quantization](https://huggingface.co/docs/optimum/concept_guides/quantization)
