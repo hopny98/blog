@@ -1,0 +1,238 @@
+---
+title: "LLM Prompt Evaluation: Key Performance & Quality Metrics"
+description: "Các phương pháp đánh giá hiệu quả của prompt cho LLM (Large Language Model) thông qua bộ chỉ số chuyên biệt (Performance metrics) và các tiêu chí chất lượng (Quality metrics) để đạt kết quả đầu ra tối ưu."
+pubDate: 2026-02-11
+author: "hopny"
+category: "nlp"
+tags: ["prompt-engineering", "llm", "evaluation", "metrics", "ai"]
+image: ""
+---
+
+
+Việc đánh giá các phản hồi từ LLM là bước quan trọng để đảm bảo tính hữu dụng và an toàn. Dưới đây là giải thích chi tiết về các độ đo (metrics).
+
+
+## 1. Task-specific metrics
+
+Đây là các thước đo định lượng, thường được tính toán dựa trên sự so sánh giữa kết quả của mô hình và kết quả thực tế (Ground Truth).
+
+### 1.1. Classification - Accuracy, F1-score
+
+Dùng khi bạn yêu cầu LLM phân loại văn bản (ví dụ: cảm xúc tích cực/tiêu cực).
+Để hiểu rõ hơn, chúng ta cần đi sâu vào khái niệm **(Confusion Matrix)**. Đây là nền tảng để tính toán các độ đo cần thiết.
+
+Hãy tưởng tượng bạn có **100 bình luận**. Bạn yêu cầu LLM phân loại xem bình luận đó là **Tích cực (Positive)** hay **Tiêu cực (Negative)**.
+
+Trước hết, ta đặt tên cho các trường hợp có thể xảy ra, có 4 nhóm kết quả:
+*   **TP (True Positive - Đúng là Tích cực):** Model đoán *Tích cực*, thực tế đúng là *Tích cực*.
+*   **TN (True Negative - Đúng là Tiêu cực):** Model đoán *Tiêu cực*, thực tế đúng là *Tiêu cực*.
+*   **FP (False Positive - Dương tính giả):** Model đoán *Tích cực*, nhưng thực tế là *Tiêu cực* (Bị nhầm).
+*   **FN (False Negative - Âm tính giả):** Model đoán *Tiêu cực*, nhưng thực tế là *Tích cực* (Bị nhầm).
+
+
+LLM phân loại 100 bình luận, giả sử ta có bảng kết quả như sau:
+
+| | Thực tế: Tích cực | Thực tế: Tiêu cực | Tổng dự đoán |
+| :--- | :---: | :---: | :---: |
+| **Dự đoán: Tích cực** | **50 (TP)** | **5 (FP)** | 55 |
+| **Dự đoán: Tiêu cực** | **10 (FN)** | **35 (TN)** | 45 |
+| **Tổng thực tế** | 60 | 40 | 100 |
+
+#### Tính Accuracy (Độ chính xác):
+Accuracy là tổng số câu đoán đúng trên tổng số câu.
+$$
+Accuracy = \frac{TP + TN}{Total} = \frac{50 + 35}{100} = 0.85 \text{ (hay } 85\%)
+$$
+**Nhận xét:** Model này đúng 85% trường hợp.
+
+#### Tại sao cần F1-score? (Precision và Recall)
+Đôi khi Accuracy đánh lừa chúng ta. Nếu 95 bình luận là Tích cực và chỉ 5 bình luận là Tiêu cực, model chỉ cần đoán tất cả là "Tích cực" thì Accuracy đã là 95%, dù nó chẳng phân biệt được gì cả. **F1-score** sinh ra để giải quyết vấn đề này.
+
+Trước hết phải tính:
+*   **Precision:** Trong số những câu model đoán là *Tích cực*, bao nhiêu câu thực sự *tích cực*?
+    $$
+    Precision = \frac{TP}{TP + FP} = \frac{50}{50 + 5} = \frac{50}{55} \approx 0.91
+    $$
+    *(Model khá tự tin khi đoán tích cực, 91% là đúng).*
+
+*   **Recall:** Trong số tất cả các câu *Tích cực* thực tế, model tìm được bao nhiêu câu?
+    $$
+    Recall = \frac{TP}{TP + FN} = \frac{50}{50 + 10} = \frac{50}{60} \approx 0.83
+    $$
+    *(Model hơi *kém* trong việc tìm hết các câu tích cực, bỏ sót mất 17%).*
+
+#### Tính F1-score:
+F1-score là trung bình điều hòa giữa Precision và Recall. Nó ép model phải tốt cả hai mặt (không được đoán bừa, không được bỏ sót).
+$$
+F1 = 2 \times \frac{Precision \times Recall}{Precision + Recall} = 2 \times \frac{0.91 \times 0.83}{0.91 + 0.83} = 2 \times \frac{0.7553}{1.74} \approx 0.868
+$$
+
+Trong thực tế, khi đánh giá LLM, người ta luôn ưu tiên **F1-score** hơn **Accuracy** vì dữ liệu thực tế thường không cân bằng.
+
+
+### 1.2 BLEU (Bilingual Evaluation Understudy)
+
+BLEU trả lời câu hỏi: *"Trong những từ model viết ra, có bao nhiêu từ là đúng?"*
+
+Để hiểu rõ hơn về cách các chỉ số này hoạt động trong thực tế, chúng ta sẽ "mổ xẻ" ví dụ sau:
+
+Đầu tiên, ta xác định 2 câu cần so sánh:
+*   **Reference (Văn bản chuẩn - R):** "Con / mèo / đang / ngủ / trên / giường" (6 từ)
+*   **Candidate (Văn bản tạo ra từ model - C):** "Con / mèo / nằm / trên / giường" (5 từ)
+
+
+
+BLEU tính toán dựa trên **n-gram** (cụm n từ liên tiếp). Để đơn giản, ta tính BLEU-2 (chỉ xét 1-gram và 2-gram). Quá trình bao gồm các bước sau:
+
+**Bước 1: Tính Unigram (1-gram - từng từ đơn lẻ)**
+*   Từ của model (C): `Con`, `mèo`, `nằm`, `trên`, `giường`. (Tổng = 5)
+*   Từ trùng khớp với câu chuẩn: `Con`, `mèo`, `trên`, `giường`. (Trùng = 4)
+*   => **Precision 1-gram:** $$P_1 = 4 / 5 = 0.8$$
+
+**Bước 2: Tính Bigram (2-gram - cụm 2 từ liên tiếp)**
+*   Cụm của model (C): `Con mèo`, `mèo nằm`, `nằm trên`, `trên giường`. (Tổng = 4)
+*   Cụm của câu chuẩn (R): `Con mèo`, `mèo đang`, `đang ngủ`, `ngủ trên`, `trên giường`.
+*   Cụm trùng khớp: `Con mèo`, `trên giường`. (Trùng = 2)
+*   => **Precision 2-gram:** $$P_2 = 2 / 4 = 0.5$$
+
+**Bước 3: Hình phạt độ ngắn (Brevity Penalty - BP)**
+BLEU phạt các câu quá ngắn (vì nếu model chỉ dịch 1 từ đúng, Precision sẽ là 100% nhưng câu vô nghĩa).
+*   Độ dài model (c = 5), độ dài chuẩn (r = 6).
+*   Vì c < r, áp dụng công thức phạt: $BP = e^{(1 - r/c)} = e^{(1 - 6/5)} = e^{-0.2} \approx 0.818$
+
+**Bước 4: Tính điểm BLEU-2 cuối cùng**
+Điểm BLEU là trung bình nhân của các n-gram nhân với BP.
+*   $BLEU = BP \times \sqrt{P_1 \times P_2}$
+*   $BLEU = 0.818 \times \sqrt{0.8 \times 0.5} = 0.818 \times \sqrt{0.4} = 0.818 \times 0.632 \approx \mathbf{0.517}$ (Hay 51.7 điểm BLEU).
+
+*Trong thực tế, hệ thống hay dùng BLEU-4 xét đến cụm 4 từ, nhưng ở ví dụ này cụm 3 từ và 4 từ của model không có cụm nào khớp với bản chuẩn, nên điểm sẽ bị kéo xuống rất thấp.*
+
+### 1.3. ROUGE (Tập trung vào Recall - Độ phủ)
+ROUGE trả lời câu hỏi: *"Trong tất cả những thông tin quan trọng của văn bản chuẩn, model đã bao phủ (bắt được) bao nhiêu phần?"*
+
+Trong đánh giá tóm tắt, người ta thường dùng **ROUGE-1**, **ROUGE-2**, và **ROUGE-L**. Điểm ROUGE thực chất bao gồm cả Recall, Precision và F1-Score, nhưng Recall là quan trọng nhất. Ta dùng lại ví dụ ở mục **1.2**
+
+**ROUGE-1 (Xét các từ đơn lẻ):**
+*   **Recall (Độ phủ):** Số từ trùng / Tổng số từ của câu chuẩn (R)
+    *   Trùng 4 từ (`Con`, `mèo`, `trên`, `giường`). Câu chuẩn có 6 từ.
+    *   => $Recall = 4 / 6 \approx 0.667$
+*   **Precision (Độ chính xác):** Số từ trùng / Tổng số từ của model (C)
+    *   => $Precision = 4 / 5 = 0.8$
+*   **F1-Score (Điểm hài hòa giữa Recall và Precision):**
+    *   $F1 = 2 \times \frac{Precision \times Recall}{Precision + Recall} = 2 \times \frac{0.8 \times 0.667}{0.8 + 0.667} \approx \mathbf{0.727}$
+
+**ROUGE-2 (Xét cụm 2 từ):**
+*   Trùng 2 cụm (`Con mèo`, `trên giường`). Tổng cụm 2 từ của câu chuẩn = 5.
+    *   => $Recall = 2 / 5 = 0.4$
+
+**ROUGE-L (Longest Common Subsequence - Chuỗi con chung dài nhất):**
+ROUGE-L rất hay được dùng vì nó không yêu cầu các từ phải đứng sát cạnh nhau, chỉ cần **đúng thứ tự xuất hiện**.
+*   Chuỗi từ chung giữ nguyên thứ tự giữa 2 câu là: `"Con", "mèo", "trên", "giường"` (Chiều dài = 4 từ).
+    *   => **Recall ROUGE-L** = 4 / 6 = **0.667**
+    *   => **Precision ROUGE-L** = 4 / 5 = **0.8**
+    *   => **F1 ROUGE-L** $\approx \mathbf{0.727}$
+
+### 1.4. Pass@k
+LLM có tính ngẫu nhiên (do tham số *Temperature*). Nếu bạn yêu cầu nó giải bài toán khó (ví dụ sinh code) lần 1 nó có thể viết sai, nhưng yêu cầu nó thử viết lại lần 2, lần 3... nó có thể sẽ viết đúng.
+
+**Pass@k trả lời câu hỏi:** *"Giả sử tôi cho phép mô hình tạo ra $k$ phương án giải khác nhau. Xác suất để **CÓ ÍT NHẤT MỘT** phương án vượt qua được toàn bộ các bài Unit Test là bao nhiêu?"*
+*   **Pass@1:** Chỉ cho 1 cơ hội duy nhất. Chạy đúng thì ăn điểm, sai thì trượt (Khó nhất).
+*   **Pass@10:** Cho 10 cơ hội. Chỉ cần 1 trong 10 đoạn code chạy đúng là được tính thành công.
+
+
+Thay vì bắt model sinh ra đúng $k$ đoạn code (điều này dẫn đến sai số thống kê cao), các nhà khoa học (cụ thể là OpenAI khi tạo ra HumanEval) đã đề xuất cách tính ổn định hơn:
+Cho model sinh ra một số lượng lớn đáp án $n$ (ví dụ $n=200$). Chạy test tất cả để đếm xem có bao nhiêu đáp án đúng ($c$). Sau đó dùng toán tổ hợp để tính kỳ vọng cho $k$. Công thức như sau: 
+$$
+Pass@k = 1 - \frac{\binom{n-c}{k}}{\binom{n}{k}}
+$$
+
+**Đây là bài toán xác suất phần bù, trong đó:**
+*  $\binom{n}{k}$ *(Tổ hợp chập k của n)*: Tổng số cách chọn ra $k$ đoạn code bất kỳ từ $n$ đoạn đã sinh ra.
+*  $\binom{n-c}{k}$: Tổng số cách chọn ra $k$ đoạn code **TỪ NHỮNG ĐOẠN BỊ SAI** ($n-c$ là số code sai).
+*  $\frac{\binom{n-c}{k}}{\binom{n}{k}}$: Xác suất bạn bốc ngẫu nhiên $k$ lần mà xui xẻo toàn trúng code SAI.**
+
+=> Xác suất có **ÍT NHẤT 1 ĐOẠN ĐÚNG**: $1 - \frac{\binom{n-c}{k}}{\binom{n}{k}}$
+
+**Ví dụ chi tiết**
+
+Giả sử yêu cầu LLM viết hàm `tinh_giai_thua(x)`. Bạn cho model sinh ra tổng cộng **$n = 10$** đoạn code khác nhau. Lấy 10 đoạn này chạy Unit Test, kết quả có **$c = 3$** đoạn chạy đúng, và $10 - 3 = 7$ đoạn chạy sai báo lỗi.
+
+Chúng ta tính thử các trường hợp của $k$:
+
+#### 1. Tính Pass@1 (Chỉ lấy 1 đáp án bất kỳ)
+*   **Theo logic thông thường:** Có 10 cái, 3 cái đúng. Bốc bừa 1 cái thì tỷ lệ trúng là 3/10 = 30%.
+*   **Theo công thức:** $k = 1$
+    *   Tổ hợp chọn 1 từ 10: $\binom{10}{1} = 10$
+    *   Tổ hợp chọn 1 từ 7 code sai: $\binom{7}{1} = 7$
+    *   $Pass@1 = 1 - (7 / 10) = 1 - 0.7 = \mathbf{0.3}$
+
+#### 2. Tính Pass@2 (Được cho 2 cơ hội)
+*   Tổ hợp chọn 2 từ 10 (Tổng số cách bốc 2 đoạn code): $\binom{10}{2} = \frac{10 \times 9}{2} = 45$ cách.
+*   Tổ hợp chọn 2 từ 7 (Số cách bốc xui xẻo trúng 2 đoạn đều sai): $\binom{7}{2} = \frac{7 \times 6}{2} = 21$ cách.
+*   Xác suất xui xẻo (bốc 2 cái sai hết): $21 / 45 \approx 0.467$ (46.7%).
+*   => **$Pass@2$** = $1 - 0.467 =$ **0.533**.
+    *(cho thêm 1 cơ hội, xác suất lấy được code xài được đã tăng từ 30% lên 53.3%).*
+
+#### 3. Tính Pass@5 (Được cho 5 cơ hội)
+*   $\binom{10}{5} = \frac{10 \times 9 \times 8 \times 7 \times 6}{5 \times 4 \times 3 \times 2 \times 1} = 252$ cách.
+*   $\binom{7}{5} = \frac{7 \times 6}{2 \times 1} = 21$ cách.
+*   Xác suất toàn sai: $21 / 252 \approx 0.083$ (Chỉ có 8.3% cơ hội bạn bốc 5 lần mà đen đủi trượt cả 5).
+*   => **$Pass@5$** = $1 - 0.083 =$ **0.917**.
+
+---
+
+## 2. Quality metrics
+
+Ta đã đi qua các chỉ số đo lường bằng Toán học nghiêm ngặt (BLEU, ROUGE, F1, Pass@k). Tuy nhiên, khi đánh giá LLM hiện đại như GPT-4 hay Claude, toán học là **không đủ**. 
+Làm sao để một công thức toán học biết được một câu văn có mỉa mai hay không? Làm sao nó biết câu trả lời có chứa ngôn từ độc hại hay không? 
+
+Đó là lúc chúng ta cần đến các **Thước đo định tính (Đánh giá ngữ nghĩa, chất lượng)**. Vì không thể dùng công thức cứng, người ta thường dùng con người để chấm điểm, hoặc phổ biến nhất hiện nay là dùng một LLM thông minh hơn để làm giám khảo chấm điểm cho LLM khác (phương pháp này gọi là **LLM-as-a-judge**).
+Dưới đây là 4 tiêu chí quan trọng nhất:
+
+Hình ảnh bạn cung cấp chính là 4 trụ cột cốt lõi trong nhóm **Thước đo Chất lượng (Quality Metrics)** dành cho LLM. Khác với các thước đo toán học đếm từ (như BLEU, ROUGE), đây là các thước đo **đánh giá ngữ nghĩa, logic và hành vi**.
+
+Dưới đây là giải thích chi tiết, **cách các kỹ sư AI thực sự đo lường (implement) chúng trong thực tế**, và ví dụ minh họa cho từng hạng mục.
+
+
+### 2.1. Coherence and fluency (Tính mạch lạc và trôi chảy)
+
+Đánh giá chất lượng hành văn của mô hình.
+*   **Fluency:** Văn bản có tự nhiên, đúng ngữ pháp, chính tả, và từ vựng phong phú như người thật viết không?
+*   **Coherence:** Các câu có liên kết logic với nhau tạo thành một mạch văn thống nhất không, hay bị đứt gãy, lan man?
+
+**Cách thức thực hiện:**
+*   **Truyền thống:** Dùng chỉ số **Perplexity** (đo lường mức độ *bối rối* của mô hình ngôn ngữ trước một câu văn. Văn càng lủng củng, mô hình càng bối rối -> Điểm càng thấp).
+*   **Hiện đại (LLM-as-a-Judge):** Dùng một mô hình siêu việt (như GPT-5) làm giám khảo. Cung cấp cho GPT-5 một **Rubric (thang điểm)** chi tiết từ 1-5 và yêu cầu nó chấm điểm đoạn văn đầu ra.
+*   **Human Evaluation:** Thuê con người đọc và chấm điểm theo thang đo cụ thể (1: Rất tệ -> 5: Rất tốt).
+
+
+### 2.2. Factual accuracy (Độ chính xác thực tế)
+
+Đánh giá xem LLM có cung cấp thông tin đúng sự thật hay không. Đây là tiêu chí để kiểm tra mức độ **Hallucination (Ảo giác / Bịa đặt)** của mô hình.
+
+**Cách đo lường**
+*   **RAG Evaluation:** Cung cấp cho mô hình đánh giá 3 thứ: **Câu hỏi**, **Câu trả lời của LLM**, **Một đoạn văn bản chứa Sự Thật (Reference Context)** - ví dụ bài viết Wikipedia. Giám khảo AI sẽ so sánh xem câu trả lời có mâu thuẫn với sự thật không. Các framework nổi tiếng làm việc này là **RAGAS** hoặc **TruLens**.
+*   **Prompting Giám khảo:** Yêu cầu giám khảo AI bóc tách từng *luận điểm* trong câu trả lời của LLM và kiểm chứng chéo (Cross-check) từng luận điểm một.
+
+
+
+### 2.3. Format compliance (Tuân thủ định dạng)
+
+Đánh giá xem LLM có tuân thủ đúng 100% các cấu trúc đầu ra được yêu cầu hay không (ví dụ: chỉ trả về JSON, XML, bảng Markdown, không giải thích lằng nhằng). Điều này cực kỳ quan trọng khi lập trình viên muốn dùng code tự động gọi API của LLM.
+
+**Cách thức thực hiện:**
+Với tiêu chí này, **không cần dùng AI làm giám khảo**. Các kỹ sư dùng Code lập trình để kiểm tra:
+*   **Regex (Biểu thức chính quy):** Quét xem trong đầu ra có chứa đúng các thẻ `[ ]`, `{ }` hay không.
+*   **Parsers (Trình phân tích cú pháp):** Dùng hàm `json.loads()` trong Python. Nếu code chạy báo lỗi (Exception) -> LLM bị 0 điểm. Nếu code đọc được dữ liệu trơn tru -> LLM được 10 điểm.
+
+
+### 2.4. Safety and appropriateness (Tính an toàn và phù hợp)
+
+Đánh giá mức độ *ngoan* của mô hình. LLM phải biết **từ chối** các yêu cầu vi phạm đạo đức, pháp luật, tạo nội dung thù ghét, bạo lực, hoặc tiết lộ thông tin cá nhân (PII). Tuy nhiên, nó cũng không được *nhạy cảm quá mức (Over-refusal - cái gì cũng từ chối)*.
+
+**Cách thức thực hiện:**
+*   **Red Teaming:** Các kỹ sư sử dụng các bộ dữ liệu chứa hàng ngàn câu hỏi độc hại, câu hỏi mẹo (Jailbreak prompts) để tấn công LLM xem nó có bị "lừa" không.
+*   **Dùng Classifier / Guardrail Models:** Dùng một mô hình chuyên biệt chỉ để làm cảnh sát (ví dụ: **Llama Guard** của Meta, hay **OpenAI Moderation API**). Phản hồi của LLM sẽ được đưa qua "mô hình cảnh sát" để quét. Nếu anh cảnh sát gán nhãn "Violent" (Bạo lực) hoặc "Self-harm" (Hại bản thân) -> LLM bị trừ điểm.
+
+## Tài liệu tham khảo
+[1] [PEEM: Prompt Engineering Evaluation Metrics for Interpretable Joint Evaluation of Prompts and Responses](https://arxiv.org/abs/2603.10477)
